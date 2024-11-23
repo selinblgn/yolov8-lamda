@@ -12,7 +12,7 @@ RUN python3 -m pip install --no-cache-dir -r ${LAMBDA_TASK_ROOT}/requirements.tx
 WORKDIR ${LAMBDA_TASK_ROOT}
 
 # Uygulama kodlarını ve ONNX modelini kopyala
-COPY app.py .
+COPY lambda_function.py .
 COPY model/best.onnx /opt/model/best.onnx
 
 # Ortam değişkenlerini ayarla
