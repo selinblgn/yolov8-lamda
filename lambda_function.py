@@ -10,7 +10,7 @@ import base64
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(_name_)
+logger = logging.getLogger(__name__)
 s3 = boto3.client('s3')
 def preprocess_image(image_data, input_shape):
     """
