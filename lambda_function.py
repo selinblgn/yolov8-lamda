@@ -128,7 +128,7 @@ def handler(event, context):
 
 
         # Load the ONNX model
-        onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/model.onnx')
+        onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/best.onnx')
         session = load_model(onnx_model_path)
 
         # Adjust input shape for preprocessing
