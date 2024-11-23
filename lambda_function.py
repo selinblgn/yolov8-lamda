@@ -10,8 +10,8 @@ import base64
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
+logger = logging.getLogger(_name_)
+s3 = boto3.client('s3')
 def preprocess_image(image_data, input_shape):
     """
     Preprocess the image to match the ONNX model input.
@@ -31,6 +31,20 @@ def preprocess_image(image_data, input_shape):
         logger.error(f"Error during image preprocessing: {e}")
         raise
 
+def download_image_from_s3(bucket_name, image_key):
+    """
+    Downloads an image from an S3 bucket.
+    """
+    try:
+        logger.info(f"Downloading image from S3: bucket={bucket_name}, key={image_key}")
+        image_data = io.BytesIO()
+        s3.download_fileobj(bucket_name, image_key, image_data)
+        image_data.seek(0)
+        logger.info("Image downloaded successfully.")
+        return image_data
+    except Exception as e:
+        logger.error(f"Error downloading image from S3: {e}")
+        raise
 def load_model(onnx_model_path):
     """
     Loads the ONNX model from the specified path.
@@ -95,16 +109,26 @@ def handler(event, context):
     try:
         logger.info(f"Received event: {json.dumps(event)}")
 
-        # Parse the request body
-        body = json.loads(event['body'])
-        img_b64 = body['image']
-        conf_thres = body.get('conf_thres', 0.3)
+        bucket_name = os.environ.get('S3_BUCKET_NAME')
+        image_key = event.get('queryStringParameters', {}).get('image_name')
+        onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/model.onnx')
+
+        # Validate parameters
+        if not bucket_name or not image_key:
+            logger.error("Missing bucket name or image key.")
+            return {
+                "statusCode": 400,
+                "body": json.dumps({"error": "Missing bucket name or image key"})
+            }
+
+        # Download the image
+        image_data = download_image_from_s3(bucket_name, image_key)
+       
         
-        # Decode the base64-encoded image
-        image_data = io.BytesIO(base64.b64decode(img_b64))
+
 
         # Load the ONNX model
-        onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/best.onnx')
+        onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/model.onnx')
         session = load_model(onnx_model_path)
 
         # Adjust input shape for preprocessing
@@ -130,7 +154,7 @@ def handler(event, context):
 
     except Exception as e:
         logger.error(f"Handler encountered an error: {e}")
-        return {
+        return{
             "statusCode": 500,
             "body": json.dumps({"error": str(e)})
-        }
+            }
