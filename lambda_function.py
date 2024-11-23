@@ -6,12 +6,14 @@ import io
 import os
 import json
 import logging
-import base64
 
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Initialize the S3 client
 s3 = boto3.client('s3')
+
 def preprocess_image(image_data, input_shape):
     """
     Preprocess the image to match the ONNX model input.
@@ -42,9 +44,17 @@ def download_image_from_s3(bucket_name, image_key):
         image_data.seek(0)
         logger.info("Image downloaded successfully.")
         return image_data
+    except s3.exceptions.ClientError as e:
+        if e.response['Error']['Code'] == '403':
+            logger.error("Access denied to the S3 object.")
+            raise PermissionError("Access denied to the S3 object.")
+        else:
+            logger.error(f"Error downloading image from S3: {e}")
+            raise
     except Exception as e:
         logger.error(f"Error downloading image from S3: {e}")
         raise
+
 def load_model(onnx_model_path):
     """
     Loads the ONNX model from the specified path.
@@ -65,16 +75,17 @@ def process_predictions(predictions, conf_threshold=0.3):
     """
     try:
         logger.info("Processing predictions.")
-        boxes, scores, class_ids = predictions
+        if len(predictions) == 1:
+            predictions = predictions[0]
+        boxes, scores, class_ids = predictions[0], predictions[1], predictions[2]
         detections = []
 
-        # Iterate over each prediction and format it
         for i in range(len(scores)):
             if scores[i] >= conf_threshold:
                 detection = {
-                    "bbox": boxes[i].tolist(),  # Convert box to list
-                    "score": scores[i],        # Confidence score
-                    "class_id": int(class_ids[i])  # Convert class_id to int
+                    "bbox": boxes[i].tolist(),
+                    "score": scores[i],
+                    "class_id": int(class_ids[i])
                 }
                 detections.append(detection)
         
@@ -94,7 +105,6 @@ def run_inference(session, input_data):
         predictions = session.run(None, {input_name: input_data})
         logger.info("Inference completed.")
         
-        # Process predictions into the desired format
         detections = process_predictions(predictions)
         return detections
     except Exception as e:
@@ -103,7 +113,7 @@ def run_inference(session, input_data):
 
 def handler(event, context):
     """
-    AWS Lambda handler function to process a base64-encoded image,
+    AWS Lambda handler function to process an image from S3,
     run inference using an ONNX model, and return predictions.
     """
     try:
@@ -113,7 +123,6 @@ def handler(event, context):
         image_key = event.get('queryStringParameters', {}).get('image_name')
         onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/model.onnx')
 
-        # Validate parameters
         if not bucket_name or not image_key:
             logger.error("Missing bucket name or image key.")
             return {
@@ -121,40 +130,21 @@ def handler(event, context):
                 "body": json.dumps({"error": "Missing bucket name or image key"})
             }
 
-        # Download the image
         image_data = download_image_from_s3(bucket_name, image_key)
-       
-        
-
-
-        # Load the ONNX model
-        onnx_model_path = os.environ.get('ONNX_MODEL_PATH', '/opt/model/best.onnx')
         session = load_model(onnx_model_path)
-
-        # Adjust input shape for preprocessing
         input_shape = session.get_inputs()[0].shape
         input_shape = [int(dim) if isinstance(dim, (int, float)) else 1 for dim in input_shape]
-
-        # Preprocess the image
         input_data = preprocess_image(image_data, input_shape)
-
-        # Ensure input data is the correct type
         input_data = input_data.astype(np.float32)
-
-        # Perform inference and get formatted predictions
         detections = run_inference(session, input_data)
 
-        # Return predictions as JSON
         return {
             "statusCode": 200,
-            "body": json.dumps({
-                "detections": detections
-            })
+            "body": json.dumps({"detections": detections})
         }
 
     except Exception as e:
         logger.error(f"Handler encountered an error: {e}")
-        return{
+        return {
             "statusCode": 500,
-            "body": json.dumps({"error": str(e)})
-            }
+            "body": json.dumps({"error": str(e)})}
