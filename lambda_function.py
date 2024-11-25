@@ -8,7 +8,7 @@ import json
 import logging
 import base64
 import cv2
-
+   
 # Initialize logger
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
