@@ -2,8 +2,3 @@ boto3
 numpy==1.24.3
 pillow
 onnxruntime
-json
-logging
-requests
-cv2
-base64
